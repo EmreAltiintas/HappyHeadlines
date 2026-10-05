@@ -1,0 +1,47 @@
+# Alert rules: turn the metrics into an answer to "is there an incident?".
+# Prometheus evaluates them every 15 s; state (pending/firing) is visible at
+# http://localhost:9090/alerts and as ALERTS{} in Grafana (see the dashboard's "Firing alerts" panel).
+groups:
+  - name: happyheadlines
+    rules:
+      # A scraped service stopped answering /metrics (crashed, stopped, unreachable).
+      - alert: ServiceDown
+        expr: up == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} ({{ $labels.instance }}) for 15 s."
+
+      # CommentService -> ProfanityService breaker opened: comments are going to Pending.
+      - alert: ProfanityCircuitBreakerOpened
+        expr: increase(profanity_circuit_opened_total[2m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "ProfanityService circuit breaker opened"
+          description: "New comments are stored as Pending until ProfanityService is back."
+
+      # Cache hit ratio below 50 % over 5 min. With no traffic the division gives NaN, so nothing fires.
+      - alert: ArticleCacheLowHitRatio
+        expr: |
+          sum(rate(cache_hits_total{cache="ArticleCache"}[5m]))
+            / (sum(rate(cache_hits_total{cache="ArticleCache"}[5m])) + sum(rate(cache_misses_total{cache="ArticleCache"}[5m]))) < 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ArticleCache hit ratio below 50 %"
+          description: "Europe readers fall back to the remote Global database. Is Redis or ArticleCacheWorker down?"
+
+      - alert: CommentCacheLowHitRatio
+        expr: |
+          sum(rate(cache_hits_total{cache="CommentCache"}[5m]))
+            / (sum(rate(cache_hits_total{cache="CommentCache"}[5m])) + sum(rate(cache_misses_total{cache="CommentCache"}[5m]))) < 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CommentCache hit ratio below 50 %"
+          description: "Most comment reads go to CommentDatabase."

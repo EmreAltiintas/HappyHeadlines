@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HappyHeadlines.CommentService.WebAPI</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- Polly circuit breaker + timeout for the CommentService -> ProfanityService HTTP call. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HappyHeadlines.Core\HappyHeadlines.Core.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Db\HappyHeadlines.Db.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Observability\HappyHeadlines.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

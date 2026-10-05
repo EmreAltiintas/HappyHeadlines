@@ -1,0 +1,15 @@
+<Solution>
+  <Project Path="HappyHeadlines.ArticleCacheWorker/HappyHeadlines.ArticleCacheWorker.csproj" />
+  <Project Path="HappyHeadlines.CommentService.WebAPI/HappyHeadlines.CommentService.WebAPI.csproj" />
+  <Project Path="HappyHeadlines.Contracts/HappyHeadlines.Contracts.csproj" />
+  <Project Path="HappyHeadlines.Core/HappyHeadlines.Core.csproj" />
+  <Project Path="HappyHeadlines.Core.Tests/HappyHeadlines.Core.Tests.csproj" />
+  <Project Path="HappyHeadlines.Db/HappyHeadlines.Db.csproj" />
+  <Project Path="HappyHeadlines.DraftService.WebAPI/HappyHeadlines.DraftService.WebAPI.csproj" />
+  <Project Path="HappyHeadlines.Gateway/HappyHeadlines.Gateway.csproj" />
+  <Project Path="HappyHeadlines.ArticleService.WebAPI/HappyHeadlines.ArticleService.WebAPI.csproj" />
+  <Project Path="HappyHeadlines.NewsletterService.WebAPI/HappyHeadlines.NewsletterService.WebAPI.csproj" />
+  <Project Path="HappyHeadlines.Observability/HappyHeadlines.Observability.csproj" />
+  <Project Path="HappyHeadlines.ProfanityService.WebAPI/HappyHeadlines.ProfanityService.WebAPI.csproj" />
+  <Project Path="HappyHeadlines.PublisherService.WebAPI/HappyHeadlines.PublisherService.WebAPI.csproj" />
+</Solution>

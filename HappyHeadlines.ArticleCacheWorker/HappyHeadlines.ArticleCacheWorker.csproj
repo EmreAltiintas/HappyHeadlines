@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HappyHeadlines.ArticleCacheWorker</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Writes the cache entries to Redis (same IDistributedCache the ArticleService reads from). -->
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HappyHeadlines.Core\HappyHeadlines.Core.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Observability\HappyHeadlines.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HappyHeadlines.ProfanityService.WebAPI</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HappyHeadlines.Core\HappyHeadlines.Core.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Db\HappyHeadlines.Db.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Observability\HappyHeadlines.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,625 @@
+{
+  "configuration" : { },
+  "description" : "C4 model: services, caches and monitoring. Not built, so not drawn: Webapp, Website, SubscriberService + SubscriberDatabase + SubscriberQueue (NewsletterService only logs 'would send').",
+  "documentation" : { },
+  "id" : 1,
+  "lastModifiedDate" : "2026-10-05T10:04:28Z",
+  "model" : {
+    "people" : [ {
+      "description" : "Reads articles and posts comments.",
+      "id" : "1",
+      "name" : "Reader",
+      "properties" : {
+        "structurizr.dsl.identifier" : "reader"
+      },
+      "relationships" : [ {
+        "description" : "Reads articles",
+        "destinationId" : "4",
+        "id" : "22",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Reads articles",
+        "destinationId" : "3",
+        "id" : "23",
+        "linkedRelationshipId" : "22",
+        "sourceId" : "1"
+      }, {
+        "description" : "Reads / posts comments",
+        "destinationId" : "9",
+        "id" : "24",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person"
+    }, {
+      "description" : "Writes drafts and publishes articles.",
+      "id" : "2",
+      "name" : "Editor",
+      "properties" : {
+        "structurizr.dsl.identifier" : "editor"
+      },
+      "relationships" : [ {
+        "description" : "Writes drafts",
+        "destinationId" : "14",
+        "id" : "25",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Writes drafts",
+        "destinationId" : "3",
+        "id" : "26",
+        "linkedRelationshipId" : "25",
+        "sourceId" : "2"
+      }, {
+        "description" : "Publishes",
+        "destinationId" : "16",
+        "id" : "27",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Views dashboard",
+        "destinationId" : "21",
+        "id" : "28",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person"
+    } ],
+    "softwareSystems" : [ {
+      "containers" : [ {
+        "description" : "YARP load balancer, round-robin over the 3 ArticleService instances.",
+        "documentation" : { },
+        "id" : "4",
+        "name" : "Gateway",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.gateway"
+        },
+        "relationships" : [ {
+          "description" : "Round-robin",
+          "destinationId" : "5",
+          "id" : "29",
+          "sourceId" : "4",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "ASP.NET Core / YARP"
+      }, {
+        "description" : "Article CRUD. Global shard is read through ArticleCache first.",
+        "documentation" : { },
+        "id" : "5",
+        "name" : "ArticleService (x3)",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.articleService"
+        },
+        "relationships" : [ {
+          "description" : "1. Cache first",
+          "destinationId" : "6",
+          "id" : "30",
+          "sourceId" : "5",
+          "tags" : "Relationship"
+        }, {
+          "description" : "2. On miss",
+          "destinationId" : "8",
+          "id" : "31",
+          "sourceId" : "5",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "ASP.NET Core Web API (x-axis: 3 instances)"
+      }, {
+        "description" : "Last 14 days of Global articles. BOUGHT (Redis, non-core).",
+        "documentation" : { },
+        "id" : "6",
+        "name" : "ArticleCache",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.articleCache"
+        },
+        "tags" : "Element,Container,Cache",
+        "technology" : "Redis"
+      }, {
+        "description" : "Offline: every 30 s copies the last 14 days of Global articles into ArticleCache.",
+        "documentation" : { },
+        "id" : "7",
+        "name" : "ArticleCacheWorker",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.articleCacheWorker"
+        },
+        "relationships" : [ {
+          "description" : "Reads 14 days",
+          "destinationId" : "8",
+          "id" : "32",
+          "sourceId" : "7",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Fills",
+          "destinationId" : "6",
+          "id" : "33",
+          "sourceId" : "7",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : ".NET BackgroundService"
+      }, {
+        "description" : "8 shards (7 continents + Global), z-axis split.",
+        "documentation" : { },
+        "id" : "8",
+        "name" : "ArticleDatabase",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.articleDb"
+        },
+        "tags" : "Element,Container,Database",
+        "technology" : "SQL Server"
+      }, {
+        "components" : [ {
+          "description" : "In-process LRU: all comments of max 30 articles, evicts the least recently used article.",
+          "documentation" : { },
+          "id" : "10",
+          "name" : "CommentCache",
+          "properties" : {
+            "structurizr.dsl.identifier" : "happyHeadlines.commentService.commentCache"
+          },
+          "relationships" : [ {
+            "description" : "On miss",
+            "destinationId" : "11",
+            "id" : "34",
+            "sourceId" : "10",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "LruCache"
+        } ],
+        "description" : "Comments. Reads through CommentCache. If ProfanityService is down, comments are stored as Pending.",
+        "documentation" : { },
+        "id" : "9",
+        "name" : "CommentService",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.commentService"
+        },
+        "relationships" : [ {
+          "description" : "On miss",
+          "destinationId" : "11",
+          "id" : "35",
+          "linkedRelationshipId" : "34",
+          "sourceId" : "9"
+        }, {
+          "description" : "Writes",
+          "destinationId" : "11",
+          "id" : "36",
+          "sourceId" : "9",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Check (circuit breaker)",
+          "destinationId" : "12",
+          "id" : "37",
+          "sourceId" : "9",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "ASP.NET Core Web API"
+      }, {
+        "description" : "Comments.",
+        "documentation" : { },
+        "id" : "11",
+        "name" : "CommentDatabase",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.commentDb"
+        },
+        "tags" : "Element,Container,Database",
+        "technology" : "SQL Server"
+      }, {
+        "description" : "Profanity check.",
+        "documentation" : { },
+        "id" : "12",
+        "name" : "ProfanityService",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.profanityService"
+        },
+        "relationships" : [ {
+          "description" : "Reads",
+          "destinationId" : "13",
+          "id" : "38",
+          "sourceId" : "12",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "ASP.NET Core Web API"
+      }, {
+        "description" : "Banned words.",
+        "documentation" : { },
+        "id" : "13",
+        "name" : "ProfanityDatabase",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.profanityDb"
+        },
+        "tags" : "Element,Container,Database",
+        "technology" : "SQL Server"
+      }, {
+        "description" : "Unpublished drafts.",
+        "documentation" : { },
+        "id" : "14",
+        "name" : "DraftService",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.draftService"
+        },
+        "relationships" : [ {
+          "description" : "Reads / writes",
+          "destinationId" : "15",
+          "id" : "39",
+          "sourceId" : "14",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "ASP.NET Core Web API"
+      }, {
+        "description" : "Drafts.",
+        "documentation" : { },
+        "id" : "15",
+        "name" : "DraftDatabase",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.draftDb"
+        },
+        "tags" : "Element,Container,Database",
+        "technology" : "SQL Server"
+      }, {
+        "description" : "Publishes articles onto ArticleQueue.",
+        "documentation" : { },
+        "id" : "16",
+        "name" : "PublisherService",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.publisherService"
+        },
+        "relationships" : [ {
+          "description" : "Publishes",
+          "destinationId" : "18",
+          "id" : "40",
+          "sourceId" : "16",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "ASP.NET Core Web API"
+      }, {
+        "description" : "Immediate + daily newsletters.",
+        "documentation" : { },
+        "id" : "17",
+        "name" : "NewsletterService",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.newsletterService"
+        },
+        "relationships" : [ {
+          "description" : "Reads articles",
+          "destinationId" : "4",
+          "id" : "43",
+          "sourceId" : "17",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "ASP.NET Core Web API"
+      }, {
+        "description" : "Article fan-out. BOUGHT (RabbitMQ, non-core).",
+        "documentation" : { },
+        "id" : "18",
+        "name" : "ArticleQueue",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.articleQueue"
+        },
+        "relationships" : [ {
+          "description" : "Delivers",
+          "destinationId" : "5",
+          "id" : "41",
+          "sourceId" : "18",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Delivers",
+          "destinationId" : "17",
+          "id" : "42",
+          "sourceId" : "18",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container,Queue",
+        "technology" : "RabbitMQ / MassTransit"
+      }, {
+        "description" : "BOUGHT. Receives logs and traces from ALL services (OTLP).",
+        "documentation" : { },
+        "id" : "19",
+        "name" : "Aspire Dashboard",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.aspire"
+        },
+        "tags" : "Element,Container,Monitoring",
+        "technology" : "Aspire Dashboard"
+      }, {
+        "description" : "BOUGHT. Scrapes cache + circuit breaker metrics. Alert rules.",
+        "documentation" : { },
+        "id" : "20",
+        "name" : "Prometheus",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.prometheus"
+        },
+        "relationships" : [ {
+          "description" : "Scrapes /metrics",
+          "destinationId" : "5",
+          "id" : "44",
+          "sourceId" : "20",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Scrapes /metrics",
+          "destinationId" : "9",
+          "id" : "45",
+          "sourceId" : "20",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container,Monitoring",
+        "technology" : "Prometheus"
+      }, {
+        "description" : "BOUGHT. Cache hit ratio per cache + firing alerts.",
+        "documentation" : { },
+        "id" : "21",
+        "name" : "Grafana",
+        "properties" : {
+          "structurizr.dsl.identifier" : "happyHeadlines.grafana"
+        },
+        "relationships" : [ {
+          "description" : "Queries",
+          "destinationId" : "20",
+          "id" : "46",
+          "sourceId" : "21",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container,Monitoring",
+        "technology" : "Grafana"
+      } ],
+      "description" : "News platform.",
+      "documentation" : { },
+      "id" : "3",
+      "name" : "HappyHeadlines",
+      "properties" : {
+        "structurizr.dsl.identifier" : "happyHeadlines"
+      },
+      "tags" : "Element,Software System"
+    } ]
+  },
+  "name" : "HappyHeadlines",
+  "properties" : {
+    "structurizr.inspection.error" : "29",
+    "structurizr.dsl" : "d29ya3NwYWNlICJIYXBweUhlYWRsaW5lcyIgIkM0IG1vZGVsOiBzZXJ2aWNlcywgY2FjaGVzIGFuZCBtb25pdG9yaW5nLiBOb3QgYnVpbHQsIHNvIG5vdCBkcmF3bjogV2ViYXBwLCBXZWJzaXRlLCBTdWJzY3JpYmVyU2VydmljZSArIFN1YnNjcmliZXJEYXRhYmFzZSArIFN1YnNjcmliZXJRdWV1ZSAoTmV3c2xldHRlclNlcnZpY2Ugb25seSBsb2dzICd3b3VsZCBzZW5kJykuIiB7CgogICAgIWlkZW50aWZpZXJzIGhpZXJhcmNoaWNhbAoKICAgIG1vZGVsIHsKICAgICAgICByZWFkZXIgPSBwZXJzb24gIlJlYWRlciIgIlJlYWRzIGFydGljbGVzIGFuZCBwb3N0cyBjb21tZW50cy4iCiAgICAgICAgZWRpdG9yID0gcGVyc29uICJFZGl0b3IiICJXcml0ZXMgZHJhZnRzIGFuZCBwdWJsaXNoZXMgYXJ0aWNsZXMuIgoKICAgICAgICBoYXBweUhlYWRsaW5lcyA9IHNvZnR3YXJlU3lzdGVtICJIYXBweUhlYWRsaW5lcyIgIk5ld3MgcGxhdGZvcm0uIiB7CgogICAgICAgICAgICBnYXRld2F5ID0gY29udGFpbmVyICJHYXRld2F5IiAiWUFSUCBsb2FkIGJhbGFuY2VyLCByb3VuZC1yb2JpbiBvdmVyIHRoZSAzIEFydGljbGVTZXJ2aWNlIGluc3RhbmNlcy4iICJBU1AuTkVUIENvcmUgLyBZQVJQIgoKICAgICAgICAgICAgYXJ0aWNsZVNlcnZpY2UgPSBjb250YWluZXIgIkFydGljbGVTZXJ2aWNlICh4MykiICJBcnRpY2xlIENSVUQuIEdsb2JhbCBzaGFyZCBpcyByZWFkIHRocm91Z2ggQXJ0aWNsZUNhY2hlIGZpcnN0LiIgIkFTUC5ORVQgQ29yZSBXZWIgQVBJICh4LWF4aXM6IDMgaW5zdGFuY2VzKSIKICAgICAgICAgICAgYXJ0aWNsZUNhY2hlID0gY29udGFpbmVyICJBcnRpY2xlQ2FjaGUiICJMYXN0IDE0IGRheXMgb2YgR2xvYmFsIGFydGljbGVzLiBCT1VHSFQgKFJlZGlzLCBub24tY29yZSkuIiAiUmVkaXMiICJDYWNoZSIKICAgICAgICAgICAgYXJ0aWNsZUNhY2hlV29ya2VyID0gY29udGFpbmVyICJBcnRpY2xlQ2FjaGVXb3JrZXIiICJPZmZsaW5lOiBldmVyeSAzMCBzIGNvcGllcyB0aGUgbGFzdCAxNCBkYXlzIG9mIEdsb2JhbCBhcnRpY2xlcyBpbnRvIEFydGljbGVDYWNoZS4iICIuTkVUIEJhY2tncm91bmRTZXJ2aWNlIgogICAgICAgICAgICBhcnRpY2xlRGIgPSBjb250YWluZXIgIkFydGljbGVEYXRhYmFzZSIgIjggc2hhcmRzICg3IGNvbnRpbmVudHMgKyBHbG9iYWwpLCB6LWF4aXMgc3BsaXQuIiAiU1FMIFNlcnZlciIgIkRhdGFiYXNlIgoKICAgICAgICAgICAgY29tbWVudFNlcnZpY2UgPSBjb250YWluZXIgIkNvbW1lbnRTZXJ2aWNlIiAiQ29tbWVudHMuIFJlYWRzIHRocm91Z2ggQ29tbWVudENhY2hlLiBJZiBQcm9mYW5pdHlTZXJ2aWNlIGlzIGRvd24sIGNvbW1lbnRzIGFyZSBzdG9yZWQgYXMgUGVuZGluZy4iICJBU1AuTkVUIENvcmUgV2ViIEFQSSIgewogICAgICAgICAgICAgICAgY29tbWVudENhY2hlID0gY29tcG9uZW50ICJDb21tZW50Q2FjaGUiICJJbi1wcm9jZXNzIExSVTogYWxsIGNvbW1lbnRzIG9mIG1heCAzMCBhcnRpY2xlcywgZXZpY3RzIHRoZSBsZWFzdCByZWNlbnRseSB1c2VkIGFydGljbGUuIiAiTHJ1Q2FjaGUiCiAgICAgICAgICAgIH0KICAgICAgICAgICAgY29tbWVudERiID0gY29udGFpbmVyICJDb21tZW50RGF0YWJhc2UiICJDb21tZW50cy4iICJTUUwgU2VydmVyIiAiRGF0YWJhc2UiCiAgICAgICAgICAgIHByb2Zhbml0eVNlcnZpY2UgPSBjb250YWluZXIgIlByb2Zhbml0eVNlcnZpY2UiICJQcm9mYW5pdHkgY2hlY2suIiAiQVNQLk5FVCBDb3JlIFdlYiBBUEkiCiAgICAgICAgICAgIHByb2Zhbml0eURiID0gY29udGFpbmVyICJQcm9mYW5pdHlEYXRhYmFzZSIgIkJhbm5lZCB3b3Jkcy4iICJTUUwgU2VydmVyIiAiRGF0YWJhc2UiCgogICAgICAgICAgICBkcmFmdFNlcnZpY2UgPSBjb250YWluZXIgIkRyYWZ0U2VydmljZSIgIlVucHVibGlzaGVkIGRyYWZ0cy4iICJBU1AuTkVUIENvcmUgV2ViIEFQSSIKICAgICAgICAgICAgZHJhZnREYiA9IGNvbnRhaW5lciAiRHJhZnREYXRhYmFzZSIgIkRyYWZ0cy4iICJTUUwgU2VydmVyIiAiRGF0YWJhc2UiCiAgICAgICAgICAgIHB1Ymxpc2hlclNlcnZpY2UgPSBjb250YWluZXIgIlB1Ymxpc2hlclNlcnZpY2UiICJQdWJsaXNoZXMgYXJ0aWNsZXMgb250byBBcnRpY2xlUXVldWUuIiAiQVNQLk5FVCBDb3JlIFdlYiBBUEkiCiAgICAgICAgICAgIG5ld3NsZXR0ZXJTZXJ2aWNlID0gY29udGFpbmVyICJOZXdzbGV0dGVyU2VydmljZSIgIkltbWVkaWF0ZSArIGRhaWx5IG5ld3NsZXR0ZXJzLiIgIkFTUC5ORVQgQ29yZSBXZWIgQVBJIgogICAgICAgICAgICBhcnRpY2xlUXVldWUgPSBjb250YWluZXIgIkFydGljbGVRdWV1ZSIgIkFydGljbGUgZmFuLW91dC4gQk9VR0hUIChSYWJiaXRNUSwgbm9uLWNvcmUpLiIgIlJhYmJpdE1RIC8gTWFzc1RyYW5zaXQiICJRdWV1ZSIKCiAgICAgICAgICAgICMgTW9uaXRvcmluZyBpcyBub24tY29yZSwgc28gaXQgaXMgQk9VR0hUIChvZmYtdGhlLXNoZWxmKSwgbm90IGJ1aWx0LiBFdmVyeSBzZXJ2aWNlIHNlbmRzCiAgICAgICAgICAgICMgbG9ncy90cmFjZXMgdG8gQXNwaXJlIG92ZXIgT1RMUCAob25lIHNoYXJlZCBsaWJyYXJ5LCBIYXBweUhlYWRsaW5lcy5PYnNlcnZhYmlsaXR5KTsgdGhvc2UKICAgICAgICAgICAgIyBlaWdodCBpZGVudGljYWwgYXJyb3dzIGFyZSBsZWZ0IG91dCBvZiB0aGUgZGlhZ3JhbSBvbiBwdXJwb3NlIGFuZCBzdGF0ZWQgaGVyZSBpbnN0ZWFkLgogICAgICAgICAgICBhc3BpcmUgPSBjb250YWluZXIgIkFzcGlyZSBEYXNoYm9hcmQiICJCT1VHSFQuIFJlY2VpdmVzIGxvZ3MgYW5kIHRyYWNlcyBmcm9tIEFMTCBzZXJ2aWNlcyAoT1RMUCkuIiAiQXNwaXJlIERhc2hib2FyZCIgIk1vbml0b3JpbmciCiAgICAgICAgICAgIHByb21ldGhldXMgPSBjb250YWluZXIgIlByb21ldGhldXMiICJCT1VHSFQuIFNjcmFwZXMgY2FjaGUgKyBjaXJjdWl0IGJyZWFrZXIgbWV0cmljcy4gQWxlcnQgcnVsZXMuIiAiUHJvbWV0aGV1cyIgIk1vbml0b3JpbmciCiAgICAgICAgICAgIGdyYWZhbmEgPSBjb250YWluZXIgIkdyYWZhbmEiICJCT1VHSFQuIENhY2hlIGhpdCByYXRpbyBwZXIgY2FjaGUgKyBmaXJpbmcgYWxlcnRzLiIgIkdyYWZhbmEiICJNb25pdG9yaW5nIgogICAgICAgIH0KCiAgICAgICAgcmVhZGVyIC0+IGhhcHB5SGVhZGxpbmVzLmdhdGV3YXkgIlJlYWRzIGFydGljbGVzIgogICAgICAgIHJlYWRlciAtPiBoYXBweUhlYWRsaW5lcy5jb21tZW50U2VydmljZSAiUmVhZHMgLyBwb3N0cyBjb21tZW50cyIKICAgICAgICBlZGl0b3IgLT4gaGFwcHlIZWFkbGluZXMuZHJhZnRTZXJ2aWNlICJXcml0ZXMgZHJhZnRzIgogICAgICAgIGVkaXRvciAtPiBoYXBweUhlYWRsaW5lcy5wdWJsaXNoZXJTZXJ2aWNlICJQdWJsaXNoZXMiCiAgICAgICAgZWRpdG9yIC0+IGhhcHB5SGVhZGxpbmVzLmdyYWZhbmEgIlZpZXdzIGRhc2hib2FyZCIKCiAgICAgICAgaGFwcHlIZWFkbGluZXMuZ2F0ZXdheSAtPiBoYXBweUhlYWRsaW5lcy5hcnRpY2xlU2VydmljZSAiUm91bmQtcm9iaW4iCiAgICAgICAgaGFwcHlIZWFkbGluZXMuYXJ0aWNsZVNlcnZpY2UgLT4gaGFwcHlIZWFkbGluZXMuYXJ0aWNsZUNhY2hlICIxLiBDYWNoZSBmaXJzdCIKICAgICAgICBoYXBweUhlYWRsaW5lcy5hcnRpY2xlU2VydmljZSAtPiBoYXBweUhlYWRsaW5lcy5hcnRpY2xlRGIgIjIuIE9uIG1pc3MiCiAgICAgICAgaGFwcHlIZWFkbGluZXMuYXJ0aWNsZUNhY2hlV29ya2VyIC0+IGhhcHB5SGVhZGxpbmVzLmFydGljbGVEYiAiUmVhZHMgMTQgZGF5cyIKICAgICAgICBoYXBweUhlYWRsaW5lcy5hcnRpY2xlQ2FjaGVXb3JrZXIgLT4gaGFwcHlIZWFkbGluZXMuYXJ0aWNsZUNhY2hlICJGaWxscyIKCiAgICAgICAgaGFwcHlIZWFkbGluZXMuY29tbWVudFNlcnZpY2UuY29tbWVudENhY2hlIC0+IGhhcHB5SGVhZGxpbmVzLmNvbW1lbnREYiAiT24gbWlzcyIKICAgICAgICBoYXBweUhlYWRsaW5lcy5jb21tZW50U2VydmljZSAtPiBoYXBweUhlYWRsaW5lcy5jb21tZW50RGIgIldyaXRlcyIKICAgICAgICBoYXBweUhlYWRsaW5lcy5jb21tZW50U2VydmljZSAtPiBoYXBweUhlYWRsaW5lcy5wcm9mYW5pdHlTZXJ2aWNlICJDaGVjayAoY2lyY3VpdCBicmVha2VyKSIKICAgICAgICBoYXBweUhlYWRsaW5lcy5wcm9mYW5pdHlTZXJ2aWNlIC0+IGhhcHB5SGVhZGxpbmVzLnByb2Zhbml0eURiICJSZWFkcyIKCiAgICAgICAgaGFwcHlIZWFkbGluZXMuZHJhZnRTZXJ2aWNlIC0+IGhhcHB5SGVhZGxpbmVzLmRyYWZ0RGIgIlJlYWRzIC8gd3JpdGVzIgogICAgICAgIGhhcHB5SGVhZGxpbmVzLnB1Ymxpc2hlclNlcnZpY2UgLT4gaGFwcHlIZWFkbGluZXMuYXJ0aWNsZVF1ZXVlICJQdWJsaXNoZXMiCiAgICAgICAgaGFwcHlIZWFkbGluZXMuYXJ0aWNsZVF1ZXVlIC0+IGhhcHB5SGVhZGxpbmVzLmFydGljbGVTZXJ2aWNlICJEZWxpdmVycyIKICAgICAgICBoYXBweUhlYWRsaW5lcy5hcnRpY2xlUXVldWUgLT4gaGFwcHlIZWFkbGluZXMubmV3c2xldHRlclNlcnZpY2UgIkRlbGl2ZXJzIgogICAgICAgIGhhcHB5SGVhZGxpbmVzLm5ld3NsZXR0ZXJTZXJ2aWNlIC0+IGhhcHB5SGVhZGxpbmVzLmdhdGV3YXkgIlJlYWRzIGFydGljbGVzIgoKICAgICAgICBoYXBweUhlYWRsaW5lcy5wcm9tZXRoZXVzIC0+IGhhcHB5SGVhZGxpbmVzLmFydGljbGVTZXJ2aWNlICJTY3JhcGVzIC9tZXRyaWNzIgogICAgICAgIGhhcHB5SGVhZGxpbmVzLnByb21ldGhldXMgLT4gaGFwcHlIZWFkbGluZXMuY29tbWVudFNlcnZpY2UgIlNjcmFwZXMgL21ldHJpY3MiCiAgICAgICAgaGFwcHlIZWFkbGluZXMuZ3JhZmFuYSAtPiBoYXBweUhlYWRsaW5lcy5wcm9tZXRoZXVzICJRdWVyaWVzIgogICAgfQoKICAgIHZpZXdzIHsKICAgICAgICBzeXN0ZW1Db250ZXh0IGhhcHB5SGVhZGxpbmVzICJTeXN0ZW1Db250ZXh0IiB7CiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgICAgICBhdXRvbGF5b3V0IGxyCiAgICAgICAgfQoKICAgICAgICBjb250YWluZXIgaGFwcHlIZWFkbGluZXMgIkNvbnRhaW5lcnMiIHsKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgICAgIGF1dG9sYXlvdXQgbHIgMjUwIDE1MAogICAgICAgIH0KCiAgICAgICAgY29tcG9uZW50IGhhcHB5SGVhZGxpbmVzLmNvbW1lbnRTZXJ2aWNlICJDb21tZW50U2VydmljZUNvbXBvbmVudHMiIHsKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgICAgIGF1dG9sYXlvdXQgbHIKICAgICAgICB9CgogICAgICAgIHN0eWxlcyB7CiAgICAgICAgICAgIGVsZW1lbnQgIlBlcnNvbiIgewogICAgICAgICAgICAgICAgc2hhcGUgcGVyc29uCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICMwODQyN2IKICAgICAgICAgICAgICAgIGNvbG9yICNmZmZmZmYKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIiIHsKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzQzOGRkNQogICAgICAgICAgICAgICAgY29sb3IgI2ZmZmZmZgogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIkNvbXBvbmVudCIgewogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjODViYmYwCiAgICAgICAgICAgICAgICBjb2xvciAjMDAwMDAwCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiRGF0YWJhc2UiIHsKICAgICAgICAgICAgICAgIHNoYXBlIGN5bGluZGVyCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiQ2FjaGUiIHsKICAgICAgICAgICAgICAgIHNoYXBlIGN5bGluZGVyCiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICNkOTgyMmIKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJRdWV1ZSIgewogICAgICAgICAgICAgICAgc2hhcGUgcGlwZQogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIk1vbml0b3JpbmciIHsKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzJlOGI1NwogICAgICAgICAgICB9CiAgICAgICAgICAgIHJlbGF0aW9uc2hpcCAiUmVsYXRpb25zaGlwIiB7CiAgICAgICAgICAgICAgICB0aGlja25lc3MgMwogICAgICAgICAgICAgICAgY29sb3IgIzU1NTU1NQogICAgICAgICAgICAgICAgZm9udFNpemUgMjIKICAgICAgICAgICAgICAgIHJvdXRpbmcgT3J0aG9nb25hbAogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQp9",
+    "structurizr.inspection.info" : "0",
+    "structurizr.inspection.ignore" : "0",
+    "structurizr.inspection.warning" : "0"
+  },
+  "views" : {
+    "componentViews" : [ {
+      "automaticLayout" : {
+        "edgeSeparation" : 50,
+        "nodeSeparation" : 50,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 100,
+        "vertices" : true
+      },
+      "containerId" : "9",
+      "elements" : [ {
+        "id" : "10",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "11",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "CommentServiceComponents",
+      "name" : "Component View: HappyHeadlines - CommentService",
+      "order" : 3,
+      "relationships" : [ {
+        "id" : "34"
+      } ]
+    } ],
+    "configuration" : {
+      "styles" : {
+        "elements" : [ {
+          "background" : "#d9822b",
+          "shape" : "Cylinder",
+          "tag" : "Cache"
+        }, {
+          "background" : "#85bbf0",
+          "color" : "#000000",
+          "tag" : "Component"
+        }, {
+          "background" : "#438dd5",
+          "color" : "#ffffff",
+          "tag" : "Container"
+        }, {
+          "shape" : "Cylinder",
+          "tag" : "Database"
+        }, {
+          "background" : "#2e8b57",
+          "tag" : "Monitoring"
+        }, {
+          "background" : "#08427b",
+          "color" : "#ffffff",
+          "shape" : "Person",
+          "tag" : "Person"
+        }, {
+          "shape" : "Pipe",
+          "tag" : "Queue"
+        } ],
+        "relationships" : [ {
+          "color" : "#555555",
+          "fontSize" : 22,
+          "routing" : "Orthogonal",
+          "tag" : "Relationship",
+          "thickness" : 3
+        } ]
+      },
+      "terminology" : { }
+    },
+    "containerViews" : [ {
+      "automaticLayout" : {
+        "edgeSeparation" : 50,
+        "nodeSeparation" : 150,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 250,
+        "vertices" : true
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "2",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "4",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "5",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "6",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "7",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "8",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "9",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "11",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "12",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "13",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "14",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "15",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "16",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "17",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "18",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "19",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "20",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "21",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "externalSoftwareSystemBoundariesVisible" : false,
+      "key" : "Containers",
+      "name" : "Container View: HappyHeadlines",
+      "order" : 2,
+      "relationships" : [ {
+        "id" : "22"
+      }, {
+        "id" : "24"
+      }, {
+        "id" : "25"
+      }, {
+        "id" : "27"
+      }, {
+        "id" : "28"
+      }, {
+        "id" : "29"
+      }, {
+        "id" : "30"
+      }, {
+        "id" : "31"
+      }, {
+        "id" : "32"
+      }, {
+        "id" : "33"
+      }, {
+        "id" : "35"
+      }, {
+        "id" : "36"
+      }, {
+        "id" : "37"
+      }, {
+        "id" : "38"
+      }, {
+        "id" : "39"
+      }, {
+        "id" : "40"
+      }, {
+        "id" : "41"
+      }, {
+        "id" : "42"
+      }, {
+        "id" : "43"
+      }, {
+        "id" : "44"
+      }, {
+        "id" : "45"
+      }, {
+        "id" : "46"
+      } ],
+      "softwareSystemId" : "3"
+    } ],
+    "systemContextViews" : [ {
+      "automaticLayout" : {
+        "edgeSeparation" : 50,
+        "nodeSeparation" : 50,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 100,
+        "vertices" : true
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "2",
+        "x" : 0,
+        "y" : 0
+      }, {
+        "id" : "3",
+        "x" : 0,
+        "y" : 0
+      } ],
+      "enterpriseBoundaryVisible" : true,
+      "key" : "SystemContext",
+      "name" : "System Context View: HappyHeadlines",
+      "order" : 1,
+      "relationships" : [ {
+        "id" : "23"
+      }, {
+        "id" : "26"
+      } ],
+      "softwareSystemId" : "3"
+    } ]
+  }
+}

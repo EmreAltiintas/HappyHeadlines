@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Plain class library that still needs ASP.NET Core types (IApplicationBuilder,
+         HttpContext, IHostApplicationBuilder) - the supported way to get those without
+         pulling in the Sdk.Web templates/metapackage. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same OTLP exporter + instrumentation set used by every HappyHeadlines.*.WebAPI project
+         via AddHappyHeadlinesObservability - this is the one place the versions are pinned. -->
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.19.1-beta.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+    <!-- Most stable release available for EF Core instrumentation at the time of writing is
+         still a beta (there is no 1.x GA yet); pinned explicitly rather than left floating. -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" Version="1.18.0-beta.1" />
+    <!-- Only needed for MassTransit.Logging.DiagnosticHeaders.DefaultListenerName below - the
+         ActivitySource name MassTransit's own instrumentation is registered under. No transport
+         (e.g. MassTransit.RabbitMQ) is referenced here; that is wired up per service. -->
+    <PackageReference Include="MassTransit" Version="8.5.10" />
+  </ItemGroup>
+
+</Project>

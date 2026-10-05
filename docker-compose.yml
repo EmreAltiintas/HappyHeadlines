@@ -1,0 +1,514 @@
+name: happyheadlines
+
+# ---------------------------------------------------------------------------
+# Z-axis: one SQL Server container hosting 8 databases (7 continents + Global).
+# The same 8 connection strings are handed to every ArticleService instance;
+# the shard router (HappyHeadlines.Db) picks one per request from the Continent
+# value.
+# ---------------------------------------------------------------------------
+x-shard-connstrings: &shard-connstrings
+  ArticleShards__Africa:        "Server=sqlserver,1433;Database=HappyHeadlines_Africa;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+  ArticleShards__Asia:          "Server=sqlserver,1433;Database=HappyHeadlines_Asia;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+  ArticleShards__Europe:        "Server=sqlserver,1433;Database=HappyHeadlines_Europe;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+  ArticleShards__NorthAmerica:  "Server=sqlserver,1433;Database=HappyHeadlines_NorthAmerica;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+  ArticleShards__SouthAmerica:  "Server=sqlserver,1433;Database=HappyHeadlines_SouthAmerica;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+  ArticleShards__Oceania:       "Server=sqlserver,1433;Database=HappyHeadlines_Oceania;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+  ArticleShards__Antarctica:    "Server=sqlserver,1433;Database=HappyHeadlines_Antarctica;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+  ArticleShards__Global:        "Server=sqlserver,1433;Database=HappyHeadlines_Global;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+
+x-articleservice-healthcheck: &articleservice-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 20s
+
+x-articleservice-base: &articleservice-base
+  build:
+    context: .
+    dockerfile: HappyHeadlines.ArticleService.WebAPI/Dockerfile
+  image: happyheadlines-articleservice-webapi:latest
+  restart: on-failure
+  networks:
+    - happyheadlines
+
+# ---------------------------------------------------------------------------
+# Comment / Profanity swimlanes (added). Separate processes, separate databases
+# (own catalog in the shared SQL Server container), separate connection pools.
+# CommentService -> ProfanityService is a direct REST call, NOT via the gateway.
+# ---------------------------------------------------------------------------
+x-commentservice-healthcheck: &commentservice-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 20s
+
+x-profanityservice-healthcheck: &profanityservice-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 20s
+
+x-commentservice-base: &commentservice-base
+  build:
+    context: .
+    dockerfile: HappyHeadlines.CommentService.WebAPI/Dockerfile
+  image: happyheadlines-commentservice-webapi:latest
+  restart: on-failure
+  networks:
+    - happyheadlines
+
+x-profanityservice-base: &profanityservice-base
+  build:
+    context: .
+    dockerfile: HappyHeadlines.ProfanityService.WebAPI/Dockerfile
+  image: happyheadlines-profanityservice-webapi:latest
+  restart: on-failure
+  networks:
+    - happyheadlines
+
+# ---------------------------------------------------------------------------
+# Observability (added): every service sends logs/traces/metrics to the same OTLP
+# collector - the Aspire Dashboard - via env vars only (HappyHeadlines.Observability
+# never hardcodes an endpoint). 18889 is the dashboard's INTERNAL gRPC OTLP port on the
+# compose network; the dashboard's UI is on 18888, published to the host below. Do not
+# point services at 4317 - that host-mapped port is only relevant to something outside
+# the Docker network sending telemetry directly.
+# ---------------------------------------------------------------------------
+x-otel-env: &otel-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+
+# ---------------------------------------------------------------------------
+# ArticleQueue transport (added): RabbitMQ + MassTransit. Every MassTransit-using service
+# (articleservice1-3, publisherservice, newsletterservice) gets this same connection string;
+# MassTransit itself creates one queue per consuming service when each calls
+# ConfigureEndpoints(context), so a single ArticlePublished publish fans out to all of them.
+# ---------------------------------------------------------------------------
+x-rabbitmq-env: &rabbitmq-env
+  ConnectionStrings__RabbitMq: "amqp://guest:guest@rabbitmq:5672"
+
+# ---------------------------------------------------------------------------
+# ArticleCache (added): Redis shared by the 3 ArticleService instances (readers) and the
+# ArticleCacheWorker (the offline writer). abortConnect=false + short timeouts so a dead Redis
+# makes ArticleService fall back to the database quickly instead of hanging or failing to start.
+# ---------------------------------------------------------------------------
+x-redis-env: &redis-env
+  ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=500,syncTimeout=500"
+  ArticleCache__RecentDays: "14"
+  ArticleCache__RefreshIntervalSeconds: "30"
+
+x-draftservice-healthcheck: &draftservice-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 20s
+
+x-draftservice-base: &draftservice-base
+  build:
+    context: .
+    dockerfile: HappyHeadlines.DraftService.WebAPI/Dockerfile
+  image: happyheadlines-draftservice-webapi:latest
+  restart: on-failure
+  networks:
+    - happyheadlines
+
+# ---------------------------------------------------------------------------
+# PublisherService / NewsletterService (added). Neither owns a database, so their health
+# checks are trivial (no migration/DB-reachability gate, unlike the services above).
+# ---------------------------------------------------------------------------
+x-publisherservice-healthcheck: &publisherservice-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 20s
+
+x-publisherservice-base: &publisherservice-base
+  build:
+    context: .
+    dockerfile: HappyHeadlines.PublisherService.WebAPI/Dockerfile
+  image: happyheadlines-publisherservice-webapi:latest
+  restart: on-failure
+  networks:
+    - happyheadlines
+
+x-newsletterservice-healthcheck: &newsletterservice-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 20s
+
+x-newsletterservice-base: &newsletterservice-base
+  build:
+    context: .
+    dockerfile: HappyHeadlines.NewsletterService.WebAPI/Dockerfile
+  image: happyheadlines-newsletterservice-webapi:latest
+  restart: on-failure
+  networks:
+    - happyheadlines
+
+services:
+  # -------------------------------------------------------------------------
+  # SQL Server – hosts all 8 shard databases. They are created automatically
+  # by EF Core migrations when articleservice1 starts.
+  # -------------------------------------------------------------------------
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: happyheadlines-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Your_strong_Pass123}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' -b -o /dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - happyheadlines
+
+  # -------------------------------------------------------------------------
+  # ArticleQueue broker (added). Management UI on 15672 is only for demo/debugging - watching
+  # queues fill and drain while a trace is being verified in the Aspire Dashboard.
+  # -------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    networks:
+      - happyheadlines
+
+  # -------------------------------------------------------------------------
+  # X-axis: 3 identical, stateless HappyHeadlines.ArticleService.WebAPI
+  # instances. Same image, different INSTANCE_ID only. None is published to the
+  # host – the gateway is the single entrypoint.
+  #
+  # Startup order: sqlserver healthy -> articleservice1 migrates all 8 shards
+  # and turns healthy -> articleservice2/3 start (schema already there) ->
+  # gateway starts once all three are healthy.
+  # -------------------------------------------------------------------------
+  articleservice1:
+    <<: *articleservice-base
+    container_name: happyheadlines-articleservice1
+    environment:
+      <<: [*shard-connstrings, *otel-env, *rabbitmq-env, *redis-env]
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "articleservice1"
+      MIGRATE_ON_STARTUP: "true"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      <<: *articleservice-healthcheck
+
+  articleservice2:
+    <<: *articleservice-base
+    container_name: happyheadlines-articleservice2
+    environment:
+      <<: [*shard-connstrings, *otel-env, *rabbitmq-env, *redis-env]
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "articleservice2"
+      MIGRATE_ON_STARTUP: "false"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      articleservice1:
+        condition: service_healthy
+    healthcheck:
+      <<: *articleservice-healthcheck
+
+  articleservice3:
+    <<: *articleservice-base
+    container_name: happyheadlines-articleservice3
+    environment:
+      <<: [*shard-connstrings, *otel-env, *rabbitmq-env, *redis-env]
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "articleservice3"
+      MIGRATE_ON_STARTUP: "false"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      articleservice1:
+        condition: service_healthy
+    healthcheck:
+      <<: *articleservice-healthcheck
+
+  # -------------------------------------------------------------------------
+  # YARP reverse proxy / load balancer – round-robins across the 3 instances.
+  # This is the only service exposed to the host.
+  # -------------------------------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.Gateway/Dockerfile
+    image: happyheadlines-gateway:latest
+    container_name: happyheadlines-gateway
+    restart: on-failure
+    environment:
+      <<: *otel-env
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+    ports:
+      # Host 8088 -> container 8080 (host 8080 is often taken on Windows dev boxes).
+      - "8088:8080"
+    depends_on:
+      articleservice1:
+        condition: service_healthy
+      articleservice2:
+        condition: service_healthy
+      articleservice3:
+        condition: service_healthy
+    networks:
+      - happyheadlines
+
+  # -------------------------------------------------------------------------
+  # Swimlane: ProfanityService – own process, own database (HappyHeadlines_Profanity).
+  # Not behind the gateway. Published on the host (8091) for demo / curl.
+  # -------------------------------------------------------------------------
+  profanityservice:
+    <<: *profanityservice-base
+    container_name: happyheadlines-profanityservice
+    environment:
+      <<: *otel-env
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "profanityservice"
+      MIGRATE_ON_STARTUP: "true"
+      ConnectionStrings__ProfanityDb: "Server=sqlserver,1433;Database=HappyHeadlines_Profanity;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+    ports:
+      - "8091:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck:
+      <<: *profanityservice-healthcheck
+
+  # -------------------------------------------------------------------------
+  # Swimlane: CommentService – own process, own database (HappyHeadlines_Comments).
+  # Calls ProfanityService DIRECTLY over the Docker network (http://profanityservice:8080),
+  # wrapped in a Polly circuit breaker + timeout. Deliberately NO depends_on
+  # profanityservice: CommentService must start and keep serving even when
+  # ProfanityService is down (POST then fast-fails with 503). Published on the host (8090).
+  # -------------------------------------------------------------------------
+  commentservice:
+    <<: *commentservice-base
+    container_name: happyheadlines-commentservice
+    environment:
+      <<: *otel-env
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "commentservice"
+      MIGRATE_ON_STARTUP: "true"
+      ConnectionStrings__CommentDb: "Server=sqlserver,1433;Database=HappyHeadlines_Comments;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+      ProfanityService__BaseUrl: "http://profanityservice:8080"
+      # Demo tuning: how fast pending comments show up again after ProfanityService is back
+      # (breaker open time + re-moderation interval; defaults are 15 s each).
+      ProfanityService__CircuitBreaker__BreakDurationSeconds: "5"
+      PendingModeration__IntervalSeconds: "5"
+    ports:
+      - "8090:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck:
+      <<: *commentservice-healthcheck
+
+  # -------------------------------------------------------------------------
+  # Observability sink: Aspire Dashboard receives OTLP logs/traces/metrics from every
+  # service above and correlates them. UI on 18888 (published to the host); services
+  # talk to it internally on 18889 via the happyheadlines network (see x-otel-env).
+  # No service has a blocking depends_on against this - same philosophy as CommentService
+  # not depending on ProfanityService: if the collector is down, the apps keep serving,
+  # they just have nowhere to send telemetry until it comes back.
+  # -------------------------------------------------------------------------
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    container_name: aspire-dashboard
+    environment:
+      - DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
+    ports:
+      - "18888:18888"    # dashboard UI, open in a browser
+    networks:
+      - happyheadlines
+
+  # -------------------------------------------------------------------------
+  # DraftService – own process, own database (HappyHeadlines_Drafts). Same shape as
+  # CommentService/ProfanityService: plain CRUD against its own DbContext, no repository
+  # layer. NOT routed through the gateway (the gateway fronts ArticleService's x-axis
+  # only). Published on the host (8092) for demo / curl.
+  # -------------------------------------------------------------------------
+  draftservice:
+    <<: *draftservice-base
+    container_name: happyheadlines-draftservice
+    environment:
+      <<: *otel-env
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "draftservice1"
+      MIGRATE_ON_STARTUP: "true"
+      ConnectionStrings__DraftDb: "Server=sqlserver,1433;Database=HappyHeadlines_Drafts;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+    ports:
+      - "8092:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck:
+      <<: *draftservice-healthcheck
+
+  # -------------------------------------------------------------------------
+  # PublisherService (added) – no database of its own. Receives POST /api/publish, finalizes the
+  # article and publishes ArticlePublished onto ArticleQueue (RabbitMQ, via MassTransit). NOT
+  # routed through the gateway. Published on the host (8093) for demo / curl.
+  # -------------------------------------------------------------------------
+  publisherservice:
+    <<: *publisherservice-base
+    container_name: happyheadlines-publisherservice
+    environment:
+      <<: [*otel-env, *rabbitmq-env]
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "publisherservice"
+    ports:
+      - "8093:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      <<: *publisherservice-healthcheck
+
+  # -------------------------------------------------------------------------
+  # NewsletterService (added) – no database of its own. Two independent flows: (a) its own
+  # ArticleQueue subscriber for ArticlePublished (own queue, separate from ArticleService's -
+  # that's the fan-out), and (b) POST /api/newsletters/daily, which calls ArticleService's
+  # GET /api/articles?continent= through the gateway (ArticleService's x-axis instances are never
+  # published directly). NOT routed through the gateway itself. Published on the host (8094).
+  # -------------------------------------------------------------------------
+  newsletterservice:
+    <<: *newsletterservice-base
+    container_name: happyheadlines-newsletterservice
+    environment:
+      <<: [*otel-env, *rabbitmq-env]
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "newsletterservice"
+      ArticleService__BaseUrl: "http://gateway:8080"
+    ports:
+      - "8094:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    healthcheck:
+      <<: *newsletterservice-healthcheck
+
+  # -------------------------------------------------------------------------
+  # ArticleCache store (added). Plain Redis, no persistence needed: the worker refills it every
+  # refresh interval. Not published to the host; inspect with
+  #   docker exec happyheadlines-redis redis-cli keys "articles:*"
+  # ArticleService does NOT depend_on it: if Redis is down it falls back to the database.
+  # -------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: happyheadlines-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - happyheadlines
+
+  # -------------------------------------------------------------------------
+  # ArticleCacheWorker (added) - the OFFLINE process that fills ArticleCache: every 30 s it copies
+  # the last 14 days of articles from the GLOBAL ArticleDatabase into Redis. Needs the same shard
+  # connection strings as ArticleService (shard router). No HTTP port. Starts after articleservice1
+  # is healthy so the schema (migrations) is guaranteed to exist.
+  # -------------------------------------------------------------------------
+  articlecacheworker:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.ArticleCacheWorker/Dockerfile
+    image: happyheadlines-articlecacheworker:latest
+    container_name: happyheadlines-articlecacheworker
+    restart: on-failure
+    environment:
+      <<: [*shard-connstrings, *otel-env, *redis-env]
+      INSTANCE_ID: "articlecacheworker"
+    depends_on:
+      redis:
+        condition: service_healthy
+      articleservice1:
+        condition: service_healthy
+    networks:
+      - happyheadlines
+
+  # -------------------------------------------------------------------------
+  # Cache monitoring (added): Prometheus scrapes /metrics from articleservice1-3 and commentservice
+  # (cache_hits_total / cache_misses_total); Grafana shows the hit ratio per cache. The datasource
+  # and dashboard are provisioned from ./monitoring, so `docker compose up` is all it takes.
+  #   Prometheus: http://localhost:9090      Grafana: http://localhost:3000 (anonymous, no login)
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: happyheadlines-prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - happyheadlines
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: happyheadlines-grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/var/lib/grafana/dashboards/cache-hit-ratio.json"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - happyheadlines
+
+volumes:
+  mssql-data:
+
+networks:
+  happyheadlines:
+    driver: bridge
