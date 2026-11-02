@@ -1,4 +1,4 @@
-workspace "HappyHeadlines" "C4 model: services, caches and monitoring. Not built, so not drawn: Webapp, Website, SubscriberService + SubscriberDatabase + SubscriberQueue (NewsletterService only logs 'would send')." {
+workspace "HappyHeadlines" "C4 model: services, caches and monitoring. Not built, so not drawn: Webapp, Website (the Reader calls SubscriberService directly in this model)." {
 
     !identifiers hierarchical
 
@@ -27,6 +27,12 @@ workspace "HappyHeadlines" "C4 model: services, caches and monitoring. Not built
             publisherService = container "PublisherService" "Publishes articles onto ArticleQueue." "ASP.NET Core Web API"
             newsletterService = container "NewsletterService" "Immediate + daily newsletters." "ASP.NET Core Web API"
             articleQueue = container "ArticleQueue" "Article fan-out. BOUGHT (RabbitMQ, non-core)." "RabbitMQ / MassTransit" "Queue"
+
+            # Subscriber swimlane (week 44): own network, own database, own broker. SubscriberService
+            # sits behind a runtime release toggle (JSON file with reload, no redeploy).
+            subscriberService = container "SubscriberService" "Handles subscribers. Behind a release toggle (runtime, no redeploy)." "ASP.NET Core Web API"
+            subscriberDb = container "SubscriberDatabase" "Stores all subscribers." "SQL Server" "Database"
+            subscriberQueue = container "SubscriberQueue" "New subscribers are put here. BOUGHT (RabbitMQ, non-core)." "RabbitMQ / MassTransit" "Queue"
 
             # Monitoring is non-core, so it is BOUGHT (off-the-shelf), not built. Every service sends
             # logs/traces to Aspire over OTLP (one shared library, HappyHeadlines.Observability); those
@@ -58,6 +64,12 @@ workspace "HappyHeadlines" "C4 model: services, caches and monitoring. Not built
         happyHeadlines.articleQueue -> happyHeadlines.articleService "Delivers"
         happyHeadlines.articleQueue -> happyHeadlines.newsletterService "Delivers"
         happyHeadlines.newsletterService -> happyHeadlines.gateway "Reads articles"
+
+        reader -> happyHeadlines.subscriberService "Subscribe to / unsubscribe from newsletters (via Website, not built)"
+        happyHeadlines.newsletterService -> happyHeadlines.subscriberService "Sends request to get subscribers (REST, circuit breaker)"
+        happyHeadlines.subscriberService -> happyHeadlines.subscriberDb "Storing / removing a subscriber"
+        happyHeadlines.subscriberService -> happyHeadlines.subscriberQueue "When a subscriber subscribes, the subscriber is put into this queue"
+        happyHeadlines.subscriberQueue -> happyHeadlines.newsletterService "Send a welcome mail to new subscribers"
 
         happyHeadlines.prometheus -> happyHeadlines.articleService "Scrapes /metrics"
         happyHeadlines.prometheus -> happyHeadlines.commentService "Scrapes /metrics"

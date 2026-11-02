@@ -1,0 +1,68 @@
+name: CI
+
+# No pipeline existed in the repo before week 44, so this is the first one. It covers EVERY service:
+# one build + test of the whole solution, then one Docker image build per service (matrix),
+# plus a validation of docker-compose.yml. Images are built, not pushed (no registry configured).
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore HappyHeadlines.slnx
+
+      - name: Build
+        run: dotnet build HappyHeadlines.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test HappyHeadlines.slnx --configuration Release --no-build --verbosity normal
+
+  docker-images:
+    needs: build-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - HappyHeadlines.ArticleService.WebAPI
+          - HappyHeadlines.ArticleCacheWorker
+          - HappyHeadlines.CommentService.WebAPI
+          - HappyHeadlines.ProfanityService.WebAPI
+          - HappyHeadlines.DraftService.WebAPI
+          - HappyHeadlines.PublisherService.WebAPI
+          - HappyHeadlines.NewsletterService.WebAPI
+          - HappyHeadlines.SubscriberService.WebAPI
+          - HappyHeadlines.Gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (${{ matrix.service }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          push: false
+          tags: ${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet

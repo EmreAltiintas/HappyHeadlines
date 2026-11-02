@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HappyHeadlines.SubscriberService.WebAPI</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- Publishes SubscriberSubscribed onto SubscriberQueue (RabbitMQ transport). -->
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HappyHeadlines.Contracts\HappyHeadlines.Contracts.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Core\HappyHeadlines.Core.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Db\HappyHeadlines.Db.csproj" />
+    <ProjectReference Include="..\HappyHeadlines.Observability\HappyHeadlines.Observability.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Default release-toggle file; compose overrides its location with a mounted volume. -->
+    <Content Update="featureflags.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -152,6 +152,24 @@ x-newsletterservice-base: &newsletterservice-base
   networks:
     - happyheadlines
 
+# ---------------------------------------------------------------------------
+# Subscriber swimlane (added): SubscriberService + SubscriberDatabase + SubscriberQueue.
+# See the subscriberservice block below. No network key here - set per service.
+# ---------------------------------------------------------------------------
+x-subscriberservice-healthcheck: &subscriberservice-healthcheck
+  test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 20s
+
+x-subscriberservice-base: &subscriberservice-base
+  build:
+    context: .
+    dockerfile: HappyHeadlines.SubscriberService.WebAPI/Dockerfile
+  image: happyheadlines-subscriberservice-webapi:latest
+  restart: on-failure
+
 services:
   # -------------------------------------------------------------------------
   # SQL Server – hosts all 8 shard databases. They are created automatically
@@ -419,8 +437,12 @@ services:
       ASPNETCORE_URLS: "http://+:8080"
       INSTANCE_ID: "newsletterservice"
       ArticleService__BaseUrl: "http://gateway:8080"
+      SubscriberService__BaseUrl: "http://subscriberservice:8080"
+      ConnectionStrings__SubscriberQueue: "amqp://guest:guest@subscriberqueue:5672"
     ports:
       - "8094:8080"
+    # No depends_on for subscriberservice / subscriberqueue: fault isolation - NewsletterService
+    # must start and keep serving when the subscriber lane is down (and vice versa).
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -428,6 +450,83 @@ services:
         condition: service_started
     healthcheck:
       <<: *newsletterservice-healthcheck
+    networks:
+      - happyheadlines
+      - subscriber-lane  # consumes SubscriberQueue
+
+  # =========================================================================
+  # SUBSCRIBER SWIMLANE (added) - SubscriberService + SubscriberDatabase + SubscriberQueue.
+  # Own network (subscriber-lane), own SQL Server container, own RabbitMQ broker: nothing here
+  # is shared with the article/comment/newsletter lane except the one REST call and the one
+  # queue the diagram shows. Only subscriberservice (REST API, the lane's entrypoint) and
+  # newsletterservice (queue consumer) sit on both networks; the database is reachable from
+  # subscriberservice ONLY.
+  # =========================================================================
+  subscriberdb:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: happyheadlines-subscriberdb
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Your_strong_Pass123}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1434:1433"
+    volumes:
+      - subscriberdb-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' -b -o /dev/null || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - subscriber-lane
+
+  subscriberqueue:
+    image: rabbitmq:4-management
+    container_name: happyheadlines-subscriberqueue
+    ports:
+      - "5673:5672"     # AMQP
+      - "15673:15672"   # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    networks:
+      - subscriber-lane
+
+  # Release toggle: edit ./featureflags/featureflags.json while this runs (no redeploy/restart) -
+  # the directory is mounted (not the single file) so editors that replace the file still reload.
+  # Polling watcher because inotify does not fire across Docker Desktop bind mounts.
+  subscriberservice:
+    <<: *subscriberservice-base
+    container_name: happyheadlines-subscriberservice
+    environment:
+      <<: *otel-env
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ASPNETCORE_URLS: "http://+:8080"
+      INSTANCE_ID: "subscriberservice"
+      MIGRATE_ON_STARTUP: "true"
+      ConnectionStrings__SubscriberDb: "Server=subscriberdb,1433;Database=HappyHeadlines_Subscribers;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Pass123};TrustServerCertificate=True;Encrypt=False"
+      ConnectionStrings__SubscriberQueue: "amqp://guest:guest@subscriberqueue:5672"
+      FeatureFlags__File: "/config/featureflags.json"
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+    volumes:
+      - ./featureflags:/config:ro
+    ports:
+      - "8095:8080"
+    # The queue is deliberately NOT a dependency: SubscriberService starts and serves (subscribe
+    # still stores, only the welcome mail is skipped) even when SubscriberQueue is down.
+    depends_on:
+      subscriberdb:
+        condition: service_healthy
+    healthcheck:
+      <<: *subscriberservice-healthcheck
+    networks:
+      - happyheadlines   # telemetry (aspire-dashboard) + reachable from newsletterservice
+      - subscriber-lane  # its database and queue
 
   # -------------------------------------------------------------------------
   # ArticleCache store (added). Plain Redis, no persistence needed: the worker refills it every
@@ -508,7 +607,10 @@ services:
 
 volumes:
   mssql-data:
+  subscriberdb-data:
 
 networks:
   happyheadlines:
+    driver: bridge
+  subscriber-lane:
     driver: bridge

@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HappyHeadlines.Core\HappyHeadlines.Core.csproj" />
+    <!-- ReleaseToggleAttribute (the 503 gate) is tested directly. -->
+    <ProjectReference Include="..\HappyHeadlines.SubscriberService.WebAPI\HappyHeadlines.SubscriberService.WebAPI.csproj" />
   </ItemGroup>
 
   <ItemGroup>

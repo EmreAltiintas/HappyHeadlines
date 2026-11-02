@@ -1,0 +1,10 @@
+{
+  "FeatureFlags": {
+    "SubscriberService": {
+      "Enabled": true,
+      "Subscribe": true,
+      "Unsubscribe": true,
+      "List": true
+    }
+  }
+}

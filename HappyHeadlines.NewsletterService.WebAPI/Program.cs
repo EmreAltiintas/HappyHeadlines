@@ -5,6 +5,8 @@ using HappyHeadlines.NewsletterService.WebAPI.Consumers;
 using HappyHeadlines.NewsletterService.WebAPI.Middleware;
 using HappyHeadlines.Observability;
 using MassTransit;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +36,58 @@ builder.Services.AddHttpClient<IArticleClient, ArticleClient>(client =>
     client.BaseAddress = new Uri(articleServiceOptions.BaseUrl);
 });
 
+// ---------------------------------------------------------------------------
+// Diagram: NewsletterService -> SubscriberService "Sends request to get subscribers" (sync REST).
+// Swimlane fault isolation: per-attempt timeout, retry and a circuit breaker, so a slow, dead or
+// toggled-off (503) SubscriberService fails fast and DailyNewsletterService falls back to
+// "0 subscribers" instead of taking NewsletterService down. No depends_on in compose either.
+// ---------------------------------------------------------------------------
+var subscriberOptions = builder.Configuration
+    .GetSection(SubscriberServiceOptions.SectionName)
+    .Get<SubscriberServiceOptions>() ?? new SubscriberServiceOptions();
+
+builder.Services.AddHttpClient<ISubscriberClient, SubscriberClient>(client =>
+{
+    client.BaseAddress = new Uri(subscriberOptions.BaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(30); // hard ceiling; the resilience timeout fires first
+})
+.AddResilienceHandler("subscriberservice", (pipeline, context) =>
+{
+    var logger = context.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("HappyHeadlines.NewsletterService.SubscriberCircuitBreaker");
+
+    // Outer -> inner: retry, circuit breaker, per-attempt timeout.
+    pipeline.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = subscriberOptions.RetryCount,
+        Delay = TimeSpan.FromMilliseconds(200),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true
+    });
+
+    pipeline.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+    {
+        FailureRatio = subscriberOptions.CircuitBreaker.FailureRatio,
+        MinimumThroughput = subscriberOptions.CircuitBreaker.MinimumThroughput,
+        SamplingDuration = TimeSpan.FromSeconds(subscriberOptions.CircuitBreaker.SamplingDurationSeconds),
+        BreakDuration = TimeSpan.FromSeconds(subscriberOptions.CircuitBreaker.BreakDurationSeconds),
+        OnOpened = args =>
+        {
+            logger.LogWarning("SubscriberService circuit breaker OPENED for {BreakDurationSeconds}s - calls fail fast.",
+                args.BreakDuration.TotalSeconds);
+            return ValueTask.CompletedTask;
+        },
+        OnClosed = _ =>
+        {
+            logger.LogInformation("SubscriberService circuit breaker CLOSED - calls flowing again.");
+            return ValueTask.CompletedTask;
+        }
+    });
+
+    pipeline.AddTimeout(TimeSpan.FromSeconds(subscriberOptions.TimeoutSeconds));
+});
+
 builder.Services.AddScoped<IDailyNewsletterService, DailyNewsletterService>();
 
 // ---------------------------------------------------------------------------
@@ -50,6 +104,27 @@ builder.Services.AddMassTransit(x =>
     x.UsingRabbitMq((context, cfg) =>
     {
         ConfigureRabbitMqHost(cfg, rabbitMqConnectionString);
+        cfg.ConfigureEndpoints(context);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Diagram: NewsletterService consumes SubscriberQueue ("Send a welcome mail to new subscribers").
+// A second, separate bus on its own broker: if SubscriberQueue is down, ArticleQueue consumption
+// (and the REST endpoints) keep working, and vice versa. Messages wait durably in the queue
+// while this service is down; failed consumes are retried with backoff.
+// ---------------------------------------------------------------------------
+var subscriberQueueConnectionString = builder.Configuration.GetConnectionString("SubscriberQueue")
+    ?? throw new InvalidOperationException("Missing connection string 'ConnectionStrings:SubscriberQueue'.");
+
+builder.Services.AddMassTransit<ISubscriberQueueBus>(x =>
+{
+    x.AddConsumer<WelcomeMailConsumer>();
+
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        ConfigureRabbitMqHost(cfg, subscriberQueueConnectionString);
+        cfg.UseMessageRetry(r => r.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(2)));
         cfg.ConfigureEndpoints(context);
     });
 });
