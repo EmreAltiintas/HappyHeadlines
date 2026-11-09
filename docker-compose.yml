@@ -1,5 +1,7 @@
 name: happyheadlines
 
+# Images come from GHCR (see .github/workflows/cd.yml). docker-compose.override.yml adds build: locally.
+
 # ---------------------------------------------------------------------------
 # Z-axis: one SQL Server container hosting 8 databases (7 continents + Global).
 # The same 8 connection strings are handed to every ArticleService instance;
@@ -24,10 +26,7 @@ x-articleservice-healthcheck: &articleservice-healthcheck
   start_period: 20s
 
 x-articleservice-base: &articleservice-base
-  build:
-    context: .
-    dockerfile: HappyHeadlines.ArticleService.WebAPI/Dockerfile
-  image: happyheadlines-articleservice-webapi:latest
+  image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.articleservice.webapi:${IMAGE_TAG:-latest}
   restart: on-failure
   networks:
     - happyheadlines
@@ -52,19 +51,13 @@ x-profanityservice-healthcheck: &profanityservice-healthcheck
   start_period: 20s
 
 x-commentservice-base: &commentservice-base
-  build:
-    context: .
-    dockerfile: HappyHeadlines.CommentService.WebAPI/Dockerfile
-  image: happyheadlines-commentservice-webapi:latest
+  image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.commentservice.webapi:${IMAGE_TAG:-latest}
   restart: on-failure
   networks:
     - happyheadlines
 
 x-profanityservice-base: &profanityservice-base
-  build:
-    context: .
-    dockerfile: HappyHeadlines.ProfanityService.WebAPI/Dockerfile
-  image: happyheadlines-profanityservice-webapi:latest
+  image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.profanityservice.webapi:${IMAGE_TAG:-latest}
   restart: on-failure
   networks:
     - happyheadlines
@@ -80,6 +73,9 @@ x-profanityservice-base: &profanityservice-base
 x-otel-env: &otel-env
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
   OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  # Trace sampling (GAF: Reduce Logging): keep 25% of all traces. Set TRACE_SAMPLING_RATIO=1
+  # to see every trace while debugging. See HappyHeadlines.Observability/RootTraceSampler.cs.
+  TRACE_SAMPLING_RATIO: "${TRACE_SAMPLING_RATIO:-0.25}"
 
 # ---------------------------------------------------------------------------
 # ArticleQueue transport (added): RabbitMQ + MassTransit. Every MassTransit-using service
@@ -108,10 +104,7 @@ x-draftservice-healthcheck: &draftservice-healthcheck
   start_period: 20s
 
 x-draftservice-base: &draftservice-base
-  build:
-    context: .
-    dockerfile: HappyHeadlines.DraftService.WebAPI/Dockerfile
-  image: happyheadlines-draftservice-webapi:latest
+  image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.draftservice.webapi:${IMAGE_TAG:-latest}
   restart: on-failure
   networks:
     - happyheadlines
@@ -128,10 +121,7 @@ x-publisherservice-healthcheck: &publisherservice-healthcheck
   start_period: 20s
 
 x-publisherservice-base: &publisherservice-base
-  build:
-    context: .
-    dockerfile: HappyHeadlines.PublisherService.WebAPI/Dockerfile
-  image: happyheadlines-publisherservice-webapi:latest
+  image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.publisherservice.webapi:${IMAGE_TAG:-latest}
   restart: on-failure
   networks:
     - happyheadlines
@@ -144,10 +134,7 @@ x-newsletterservice-healthcheck: &newsletterservice-healthcheck
   start_period: 20s
 
 x-newsletterservice-base: &newsletterservice-base
-  build:
-    context: .
-    dockerfile: HappyHeadlines.NewsletterService.WebAPI/Dockerfile
-  image: happyheadlines-newsletterservice-webapi:latest
+  image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.newsletterservice.webapi:${IMAGE_TAG:-latest}
   restart: on-failure
   networks:
     - happyheadlines
@@ -164,10 +151,7 @@ x-subscriberservice-healthcheck: &subscriberservice-healthcheck
   start_period: 20s
 
 x-subscriberservice-base: &subscriberservice-base
-  build:
-    context: .
-    dockerfile: HappyHeadlines.SubscriberService.WebAPI/Dockerfile
-  image: happyheadlines-subscriberservice-webapi:latest
+  image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.subscriberservice.webapi:${IMAGE_TAG:-latest}
   restart: on-failure
 
 services:
@@ -283,10 +267,7 @@ services:
   # This is the only service exposed to the host.
   # -------------------------------------------------------------------------
   gateway:
-    build:
-      context: .
-      dockerfile: HappyHeadlines.Gateway/Dockerfile
-    image: happyheadlines-gateway:latest
+    image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.gateway:${IMAGE_TAG:-latest}
     container_name: happyheadlines-gateway
     restart: on-failure
     environment:
@@ -439,6 +420,11 @@ services:
       ArticleService__BaseUrl: "http://gateway:8080"
       SubscriberService__BaseUrl: "http://subscriberservice:8080"
       ConnectionStrings__SubscriberQueue: "amqp://guest:guest@subscriberqueue:5672"
+      # Same toggle file as SubscriberService.
+      FeatureFlags__File: "/config/featureflags.json"
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+    volumes:
+      - ./featureflags:/config:ro
     ports:
       - "8094:8080"
     # No depends_on for subscriberservice / subscriberqueue: fault isolation - NewsletterService
@@ -553,10 +539,7 @@ services:
   # is healthy so the schema (migrations) is guaranteed to exist.
   # -------------------------------------------------------------------------
   articlecacheworker:
-    build:
-      context: .
-      dockerfile: HappyHeadlines.ArticleCacheWorker/Dockerfile
-    image: happyheadlines-articlecacheworker:latest
+    image: ${IMAGE_REGISTRY:-ghcr.io/emrealtiintas}/happyheadlines.articlecacheworker:${IMAGE_TAG:-latest}
     container_name: happyheadlines-articlecacheworker
     restart: on-failure
     environment:

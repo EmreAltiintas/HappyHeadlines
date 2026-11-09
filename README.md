@@ -190,7 +190,7 @@ Base URL through the gateway: `http://localhost:8088`
 | `GET` | `/api/articles/{id}?continent={continent}` | Read one. Shard = `continent`; **no fallback** → `404` if absent there. |
 | `PUT` | `/api/articles/{id}?continent={continent}` | Update. Body `Continent` must equal `continent`. → `200` / `400` / `404` |
 | `DELETE` | `/api/articles/{id}?continent={continent}` | Delete. → `204` / `404` |
-| `GET` | `/api/articles?continent={continent}` | List a shard (use `Global` for worldwide). → `200` |
+| `GET` | `/api/articles?continent={continent}&page=1&pageSize=20` | One page of summaries (no `content`, `pageSize` 1-100) from a shard, newest first (use `Global` for worldwide). → `200` / `400`. See [docs/gaf-w45.md](docs/gaf-w45.md). |
 | `GET` | `/api/instance` | Returns this instance's `instanceId` — used to observe load balancing. |
 | `GET` | `/api/health` | `200` when the shard schema is reachable and migrated; `503` while migrating / if the DB is down. Used by the container health check. |
 
@@ -685,10 +685,19 @@ the stack runs, without a redeploy or restart. It can take 5 to 10 seconds to be
 `Retry-After` and a message. `/api/health` still returns `200`, so the container is not restarted. NewsletterService treats the
 503 like an outage and uses the fallback above.
 
+NewsletterService reads the same `featureflags.json`. When the toggle is off it does not call SubscriberService. It logs a
+line and continues with an empty subscriber list.
+
 ### CI/CD
 
 `.github/workflows/ci.yml` (GitHub Actions) restores, builds and tests the solution, builds a Docker image for each of the 9
 services, and validates `docker-compose.yml`.
+
+`.github/workflows/cd.yml` runs when CI succeeds on `master`. It pushes one image per service to GHCR (tags: commit SHA and
+`latest`) and deploys over SSH with `docker compose pull` and `up -d`. Secrets in the `production` environment:
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`.
+
+`docker-compose.yml` uses the GHCR images. `docker-compose.override.yml` adds `build:` for local development.
 
 ---
 
