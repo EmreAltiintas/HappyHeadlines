@@ -29,6 +29,14 @@ public static class RequestLoggingMiddlewareExtensions
             stopwatch.Stop();
 
             var statusCode = context.Response.StatusCode;
+
+            // Container health checks and Prometheus scrapes hit these every few seconds. A
+            // successful one is noise, so only log them when something is wrong (4xx/5xx).
+            var path = context.Request.Path;
+            var isPolling = path.StartsWithSegments("/api/health") || path.StartsWithSegments("/metrics");
+            if (isPolling && statusCode < 400)
+                return;
+
             var level = statusCode >= 500 ? LogLevel.Warning : LogLevel.Information;
 
             logger.Log(

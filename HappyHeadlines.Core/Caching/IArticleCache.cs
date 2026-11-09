@@ -12,8 +12,8 @@ public interface IArticleCache
     /// <summary>The window of recent articles the cache covers (days).</summary>
     int RecentDays { get; }
 
-    /// <summary>Recent-articles list; null on a miss (including when Redis is unreachable).</summary>
-    Task<IReadOnlyList<ArticleResponse>?> GetRecentAsync(CancellationToken ct = default);
+    /// <summary>Recent-articles list as summaries (no content); null on a miss (including when Redis is unreachable).</summary>
+    Task<IReadOnlyList<ArticleSummaryResponse>?> GetRecentAsync(CancellationToken ct = default);
 
     /// <summary>One article; null on a miss (including when Redis is unreachable).</summary>
     Task<ArticleResponse?> GetAsync(int id, CancellationToken ct = default);

@@ -1,7 +1,9 @@
 using HappyHeadlines.Core.Newsletters.Models;
+using HappyHeadlines.Core.Subscribers;
 using HappyHeadlines.Core.Subscribers.Models;
 using HappyHeadlines.Db;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
 
@@ -16,15 +18,18 @@ public class DailyNewsletterService : IDailyNewsletterService
 {
     private readonly IArticleClient _articles;
     private readonly ISubscriberClient _subscribers;
+    private readonly IOptionsMonitor<SubscriberFeatureFlags> _flags;
     private readonly ILogger<DailyNewsletterService> _logger;
 
     public DailyNewsletterService(
         IArticleClient articles,
         ISubscriberClient subscribers,
+        IOptionsMonitor<SubscriberFeatureFlags> flags,
         ILogger<DailyNewsletterService> logger)
     {
         _articles = articles;
         _subscribers = subscribers;
+        _flags = flags;
         _logger = logger;
     }
 
@@ -41,12 +46,17 @@ public class DailyNewsletterService : IDailyNewsletterService
     }
 
     /// <summary>
-    /// Fault isolation towards SubscriberService: when it is down, timing out, circuit-open or
-    /// switched off by its release toggle (503), NewsletterService degrades to "no recipients"
-    /// instead of failing the whole run.
+    /// If the SubscriberService toggle is off, the call is skipped. If the service is down, slow or
+    /// circuit-open, the run also continues with "no recipients" instead of failing.
     /// </summary>
     private async Task<(IReadOnlyList<SubscriberResponse> Subscribers, bool Available)> GetSubscribersAsync(CancellationToken ct)
     {
+        if (!_flags.CurrentValue.IsEnabled(SubscriberOperation.List))
+        {
+            _logger.LogInformation("SubscriberService is switched off by its feature toggle - not calling it, continuing with 0 subscribers");
+            return (Array.Empty<SubscriberResponse>(), false);
+        }
+
         try
         {
             return (await _subscribers.ListAsync(ct), true);

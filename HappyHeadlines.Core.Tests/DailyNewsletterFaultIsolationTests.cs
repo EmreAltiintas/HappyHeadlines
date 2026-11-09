@@ -1,8 +1,10 @@
 using HappyHeadlines.Core.Articles.Models;
 using HappyHeadlines.Core.Newsletters;
+using HappyHeadlines.Core.Subscribers;
 using HappyHeadlines.Core.Subscribers.Models;
 using HappyHeadlines.Db;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Polly.CircuitBreaker;
 using Polly.Timeout;
 
@@ -13,8 +15,8 @@ public class DailyNewsletterFaultIsolationTests
 {
     private sealed class FakeArticles : IArticleClient
     {
-        public Task<IReadOnlyList<ArticleResponse>> ListAsync(Continent continent, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<ArticleResponse>>(new List<ArticleResponse> { new(), new() });
+        public Task<IReadOnlyList<ArticleSummaryResponse>> ListAsync(Continent continent, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ArticleSummaryResponse>>(new List<ArticleSummaryResponse> { new(), new() });
     }
 
     private sealed class FakeSubscribers : ISubscriberClient
@@ -32,10 +34,20 @@ public class DailyNewsletterFaultIsolationTests
         }
     }
 
+    private static IOptionsMonitor<SubscriberFeatureFlags> Flags(bool enabled) =>
+        new TestOptionsMonitor(new SubscriberFeatureFlags { Enabled = enabled });
+
+    private sealed class TestOptionsMonitor(SubscriberFeatureFlags value) : IOptionsMonitor<SubscriberFeatureFlags>
+    {
+        public SubscriberFeatureFlags CurrentValue => value;
+        public SubscriberFeatureFlags Get(string? name) => value;
+        public IDisposable? OnChange(Action<SubscriberFeatureFlags, string?> listener) => null;
+    }
+
     private static (DailyNewsletterService Service, FakeSubscribers Subscribers) Create()
     {
         var subscribers = new FakeSubscribers();
-        return (new DailyNewsletterService(new FakeArticles(), subscribers, NullLogger<DailyNewsletterService>.Instance), subscribers);
+        return (new DailyNewsletterService(new FakeArticles(), subscribers, Flags(true), NullLogger<DailyNewsletterService>.Instance), subscribers);
     }
 
     [Fact]
@@ -68,6 +80,19 @@ public class DailyNewsletterFaultIsolationTests
         var result = await service.SendAsync(Continent.Europe);
 
         Assert.Equal(2, result.ArticleCount);       // the rest of the run still works
+        Assert.Equal(0, result.SubscriberCount);
+        Assert.False(result.SubscribersAvailable);
+    }
+
+    [Fact]
+    public async Task Toggle_off_skips_the_call_and_gives_zero_subscribers()
+    {
+        var subscribers = new FakeSubscribers { Throw = new InvalidOperationException("must not be called") };
+        var service = new DailyNewsletterService(new FakeArticles(), subscribers, Flags(false), NullLogger<DailyNewsletterService>.Instance);
+
+        var result = await service.SendAsync(Continent.Europe);
+
+        Assert.Equal(2, result.ArticleCount);
         Assert.Equal(0, result.SubscriberCount);
         Assert.False(result.SubscribersAvailable);
     }

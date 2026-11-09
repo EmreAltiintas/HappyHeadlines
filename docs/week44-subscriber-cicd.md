@@ -34,9 +34,18 @@ the stack runs, without a redeploy or restart. It can take 5 to 10 seconds to be
 `Retry-After` and a message. `/api/health` still returns `200`, so the container is not restarted. NewsletterService treats the
 503 like an outage and uses the fallback above.
 
+NewsletterService reads the same `featureflags.json`. When the toggle is off it does not call SubscriberService. It logs a
+line and continues with an empty subscriber list.
+
 ### CI/CD
 
 `.github/workflows/ci.yml` (GitHub Actions) restores, builds and tests the solution, builds a Docker image for each of the 9
 services, and validates `docker-compose.yml`.
+
+`.github/workflows/cd.yml` runs when CI succeeds on `master`. It pushes one image per service to GHCR (tags: commit SHA and
+`latest`) and deploys over SSH with `docker compose pull` and `up -d`. Secrets in the `production` environment:
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`. Without `DEPLOY_HOST` the deploy steps are skipped.
+
+`docker-compose.yml` uses the GHCR images. `docker-compose.override.yml` adds `build:` for local development.
 
 ---

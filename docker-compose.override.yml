@@ -1,0 +1,46 @@
+# Local development: build from source. Loaded automatically by docker compose.
+services:
+  articleservice1:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.ArticleService.WebAPI/Dockerfile
+  articleservice2:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.ArticleService.WebAPI/Dockerfile
+  articleservice3:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.ArticleService.WebAPI/Dockerfile
+  commentservice:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.CommentService.WebAPI/Dockerfile
+  profanityservice:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.ProfanityService.WebAPI/Dockerfile
+  draftservice:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.DraftService.WebAPI/Dockerfile
+  publisherservice:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.PublisherService.WebAPI/Dockerfile
+  newsletterservice:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.NewsletterService.WebAPI/Dockerfile
+  subscriberservice:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.SubscriberService.WebAPI/Dockerfile
+  gateway:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.Gateway/Dockerfile
+  articlecacheworker:
+    build:
+      context: .
+      dockerfile: HappyHeadlines.ArticleCacheWorker/Dockerfile

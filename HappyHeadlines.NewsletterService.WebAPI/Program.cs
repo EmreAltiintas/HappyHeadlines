@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using HappyHeadlines.Core.Newsletters;
+using HappyHeadlines.Core.Subscribers;
 using HappyHeadlines.NewsletterService.WebAPI;
 using HappyHeadlines.NewsletterService.WebAPI.Consumers;
 using HappyHeadlines.NewsletterService.WebAPI.Middleware;
@@ -87,6 +88,15 @@ builder.Services.AddHttpClient<ISubscriberClient, SubscriberClient>(client =>
 
     pipeline.AddTimeout(TimeSpan.FromSeconds(subscriberOptions.TimeoutSeconds));
 });
+
+// Same toggle file as SubscriberService; changes apply without a restart.
+var featureFlagsFile = builder.Configuration["FeatureFlags:File"] ?? "featureflags.json";
+if (!Path.IsPathRooted(featureFlagsFile))
+    featureFlagsFile = Path.Combine(AppContext.BaseDirectory, featureFlagsFile);
+
+builder.Configuration.AddJsonFile(featureFlagsFile, optional: true, reloadOnChange: true);
+builder.Services.Configure<SubscriberFeatureFlags>(
+    builder.Configuration.GetSection(SubscriberFeatureFlags.SectionName));
 
 builder.Services.AddScoped<IDailyNewsletterService, DailyNewsletterService>();
 

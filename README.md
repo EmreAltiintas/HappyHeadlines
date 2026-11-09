@@ -37,6 +37,7 @@ Z-axis split (8 article databases, one per continent plus Global), X-axis split 
 - [Observability](docs/observability.md): logging, tracing, Aspire Dashboard
 - [Caching](docs/caching.md): ArticleCache and CommentCache (week 40)
 - [SubscriberService, release toggle and CI/CD](docs/week44-subscriber-cicd.md) (week 44)
+- [Sustainability tactics](docs/gaf-w45.md): pagination, trace sampling, alpine images (week 45)
 
 ## Tests
 
