@@ -70,11 +70,21 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      # Deploy is optional: without DEPLOY_HOST the remaining steps are skipped.
+      - name: Check deploy secrets
+        id: deploy
+        run: |
+          if [ -n "$DEPLOY_HOST" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "No DEPLOY_HOST secret, skipping deploy"; fi
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+
       - uses: actions/checkout@v4
+        if: steps.deploy.outputs.enabled == 'true'
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up SSH
+        if: steps.deploy.outputs.enabled == 'true'
         run: |
           install -m 700 -d ~/.ssh
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
@@ -86,6 +96,7 @@ jobs:
 
       # The compose file mounts these two folders.
       - name: Copy compose files
+        if: steps.deploy.outputs.enabled == 'true'
         run: |
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p ~/happyheadlines"
           scp -i ~/.ssh/id_deploy -r docker-compose.yml featureflags monitoring "$DEPLOY_USER@$DEPLOY_HOST:happyheadlines/"
@@ -94,6 +105,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Pull and start
+        if: steps.deploy.outputs.enabled == 'true'
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<EOF

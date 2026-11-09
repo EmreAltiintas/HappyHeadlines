@@ -695,7 +695,7 @@ services, and validates `docker-compose.yml`.
 
 `.github/workflows/cd.yml` runs when CI succeeds on `master`. It pushes one image per service to GHCR (tags: commit SHA and
 `latest`) and deploys over SSH with `docker compose pull` and `up -d`. Secrets in the `production` environment:
-`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`.
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`. Without `DEPLOY_HOST` the deploy steps are skipped.
 
 `docker-compose.yml` uses the GHCR images. `docker-compose.override.yml` adds `build:` for local development.
 
