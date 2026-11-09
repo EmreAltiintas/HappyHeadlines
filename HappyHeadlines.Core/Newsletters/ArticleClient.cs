@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HappyHeadlines.Core.Articles;
 using HappyHeadlines.Core.Articles.Models;
 using HappyHeadlines.Db;
 
@@ -29,11 +30,12 @@ public sealed class ArticleClient : IArticleClient
         _http = http;
     }
 
-    public async Task<IReadOnlyList<ArticleResponse>> ListAsync(Continent continent, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ArticleSummaryResponse>> ListAsync(Continent continent, CancellationToken ct = default)
     {
-        var articles = await _http.GetFromJsonAsync<List<ArticleResponse>>(
-            $"/api/articles?continent={continent}", JsonOptions, ct);
+        // The newsletter only needs the newest articles, not every article with its full text.
+        var articles = await _http.GetFromJsonAsync<List<ArticleSummaryResponse>>(
+            $"/api/articles?continent={continent}&pageSize={IArticleService.MaxPageSize}", JsonOptions, ct);
 
-        return articles ?? new List<ArticleResponse>();
+        return articles ?? new List<ArticleSummaryResponse>();
     }
 }

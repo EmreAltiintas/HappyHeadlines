@@ -5,5 +5,5 @@ namespace HappyHeadlines.Core.Newsletters;
 
 public interface IArticleClient
 {
-    Task<IReadOnlyList<ArticleResponse>> ListAsync(Continent continent, CancellationToken ct = default);
+    Task<IReadOnlyList<ArticleSummaryResponse>> ListAsync(Continent continent, CancellationToken ct = default);
 }

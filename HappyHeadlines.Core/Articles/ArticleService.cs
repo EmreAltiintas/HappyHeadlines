@@ -28,13 +28,15 @@ public class ArticleService : IArticleService
     /// the last <see cref="IArticleCache.RecentDays"/> days only, on a hit AND on a miss, so the
     /// answer does not depend on cache state. The 7 continent shards are not cached.
     /// </summary>
-    public async Task<IReadOnlyList<ArticleResponse>> ListAsync(Continent continent, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ArticleSummaryResponse>> ListAsync(Continent continent, int page = 1, int pageSize = IArticleService.DefaultPageSize, CancellationToken ct = default)
     {
+        var skip = (page - 1) * pageSize;
+
         if (continent == Continent.Global)
         {
             var cached = await _cache.GetRecentAsync(ct);
             if (cached is not null)
-                return cached;
+                return cached.Skip(skip).Take(pageSize).ToList();
         }
 
         await using var db = _contextFactory.Create(continent);
@@ -46,11 +48,21 @@ public class ArticleService : IArticleService
             query = query.Where(a => a.PublishedDate >= since);
         }
 
-        var articles = await query
+        // Select() makes SQL Server return only these columns, so Content is never read.
+        return await query
             .OrderByDescending(a => a.PublishedDate)
+            .ThenByDescending(a => a.Id)
+            .Skip(skip)
+            .Take(pageSize)
+            .Select(a => new ArticleSummaryResponse
+            {
+                Id = a.Id,
+                Title = a.Title,
+                Author = a.Author,
+                PublishedDate = a.PublishedDate,
+                Continent = a.Continent
+            })
             .ToListAsync(ct);
-
-        return articles.Select(ArticleResponse.FromEntity).ToList();
     }
 
     public async Task<ArticleResponse?> GetAsync(Continent continent, int id, CancellationToken ct = default)

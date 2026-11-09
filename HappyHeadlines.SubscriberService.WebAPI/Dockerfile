@@ -15,13 +15,14 @@ COPY HappyHeadlines.Db/ HappyHeadlines.Db/
 COPY HappyHeadlines.Core/ HappyHeadlines.Core/
 COPY HappyHeadlines.Observability/ HappyHeadlines.Observability/
 COPY HappyHeadlines.SubscriberService.WebAPI/ HappyHeadlines.SubscriberService.WebAPI/
-RUN dotnet publish HappyHeadlines.SubscriberService.WebAPI/HappyHeadlines.SubscriberService.WebAPI.csproj -c Release -o /app --no-restore
+RUN dotnet publish HappyHeadlines.SubscriberService.WebAPI/HappyHeadlines.SubscriberService.WebAPI.csproj -c Release -o /app --no-restore -p:DebugType=None -p:DebugSymbols=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 # curl is used by the container HEALTHCHECK in docker-compose.yml.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache curl
+# SqlClient does not work in invariant globalization mode, which the alpine image turns on.
+RUN apk add --no-cache icu-libs
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 WORKDIR /app
 COPY --from=build /app ./
 ENV ASPNETCORE_URLS=http://+:8080

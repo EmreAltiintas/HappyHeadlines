@@ -38,8 +38,8 @@ public sealed class ArticleCache : IArticleCache
 
     public CacheMetrics Metrics => _metrics;
 
-    public Task<IReadOnlyList<ArticleResponse>?> GetRecentAsync(CancellationToken ct = default) =>
-        ReadAsync<IReadOnlyList<ArticleResponse>>(ListKey, ct);
+    public Task<IReadOnlyList<ArticleSummaryResponse>?> GetRecentAsync(CancellationToken ct = default) =>
+        ReadAsync<IReadOnlyList<ArticleSummaryResponse>>(ListKey, ct);
 
     public Task<ArticleResponse?> GetAsync(int id, CancellationToken ct = default) =>
         ReadAsync<ArticleResponse>(ItemKey(id), ct);
@@ -51,7 +51,9 @@ public sealed class ArticleCache : IArticleCache
         foreach (var article in recentArticles)
             await _cache.SetStringAsync(ItemKey(article.Id), JsonSerializer.Serialize(article, Json), options, ct);
 
-        await _cache.SetStringAsync(ListKey, JsonSerializer.Serialize(recentArticles, Json), options, ct);
+        // The list key only holds summaries; the full text lives in the per-article keys above.
+        var summaries = recentArticles.Select(ArticleSummaryResponse.FromResponse).ToList();
+        await _cache.SetStringAsync(ListKey, JsonSerializer.Serialize(summaries, Json), options, ct);
     }
 
     public async Task InvalidateAsync(int? id, CancellationToken ct = default)

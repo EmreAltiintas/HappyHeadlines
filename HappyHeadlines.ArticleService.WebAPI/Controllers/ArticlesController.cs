@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using HappyHeadlines.Core.Articles;
 using HappyHeadlines.Core.Articles.Models;
 using HappyHeadlines.Db;
@@ -21,14 +22,20 @@ public class ArticlesController : ControllerBase
         _articles = articles;
     }
 
-    /// <summary>List every article in a continent's shard (use <c>Global</c> for worldwide).</summary>
+    /// <summary>
+    /// One page of article summaries (no content) from a continent's shard (use <c>Global</c> for
+    /// worldwide), newest first. Read the full text with <c>GET /api/articles/{id}</c>.
+    /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(IReadOnlyList<ArticleResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<ArticleResponse>>> List(
+    [ProducesResponseType(typeof(IReadOnlyList<ArticleSummaryResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyList<ArticleSummaryResponse>>> List(
         [FromQuery] Continent continent,
-        CancellationToken ct)
+        [FromQuery, Range(1, int.MaxValue)] int page = 1,
+        [FromQuery, Range(1, IArticleService.MaxPageSize)] int pageSize = IArticleService.DefaultPageSize,
+        CancellationToken ct = default)
     {
-        return Ok(await _articles.ListAsync(continent, ct));
+        return Ok(await _articles.ListAsync(continent, page, pageSize, ct));
     }
 
     /// <summary>Read one article. The shard is chosen from <paramref name="continent"/>; no fallback.</summary>

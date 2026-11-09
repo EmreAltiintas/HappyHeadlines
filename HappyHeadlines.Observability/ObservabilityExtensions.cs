@@ -1,6 +1,7 @@
 using MassTransit.Logging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -36,6 +37,7 @@ public static class ObservabilityExtensions
         this IHostApplicationBuilder builder, string serviceName, bool exposePrometheusMetrics = false)
     {
         var instanceId = Environment.GetEnvironmentVariable("INSTANCE_ID") ?? Environment.MachineName;
+        var samplingRatio = builder.Configuration.GetValue("TRACE_SAMPLING_RATIO", 1.0);
 
         builder.Logging.AddOpenTelemetry(o =>
         {
@@ -43,10 +45,21 @@ public static class ObservabilityExtensions
             o.IncludeFormattedMessage = true;
         });
 
+        // HttpClient logs 4 Information lines per outbound call (start/end of the request and of
+        // the handler pipeline). The HttpClient trace span already shows the same, so only
+        // keep warnings and errors.
+        builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService(serviceName, serviceInstanceId: instanceId))
             .WithTracing(t => t
-                .AddAspNetCoreInstrumentation()
+                // Keep a fraction of all traces (1 = keep everything). ParentBased: a service that
+                // receives a trace context (HTTP or RabbitMQ) follows the sender's decision, so a
+                // trace is either complete or absent.
+                .SetSampler(new ParentBasedSampler(new RootTraceSampler(samplingRatio)))
+                // Prometheus scrapes /metrics every few seconds; a trace per scrape is pure noise.
+                .AddAspNetCoreInstrumentation(o =>
+                    o.Filter = ctx => !ctx.Request.Path.StartsWithSegments("/metrics"))
                 .AddHttpClientInstrumentation()
                 .AddEntityFrameworkCoreInstrumentation()
                 // MassTransit publishes its own spans (publish/consume) under this
